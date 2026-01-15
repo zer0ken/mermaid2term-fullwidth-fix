@@ -1,5 +1,6 @@
 import type { RenderOptions, DiagramType } from './core/types.js';
-import { DEFAULT_RENDER_OPTIONS } from './core/types.js';
+import { DEFAULT_RENDER_OPTIONS, COMPACT_MODE_OVERRIDES } from './core/types.js';
+import { getTerminalWidth, isInteractiveTerminal } from './core/text.js';
 import { parseFlowchart } from './diagrams/flowchart/parser.js';
 import { renderFlowchart } from './diagrams/flowchart/renderer.js';
 import { parseSequence } from './diagrams/sequence/parser.js';
@@ -8,6 +9,7 @@ import { renderSequence } from './diagrams/sequence/renderer.js';
 export * from './core/types.js';
 export * from './core/canvas.js';
 export * from './core/characters.js';
+export * from './core/text.js';
 export * from './diagrams/flowchart/index.js';
 export * from './diagrams/sequence/index.js';
 
@@ -29,11 +31,25 @@ export function detectDiagramType(input: string): DiagramType {
   return 'unknown';
 }
 
+function resolveOptions(options: Partial<RenderOptions>): RenderOptions {
+  let resolved: RenderOptions = { ...DEFAULT_RENDER_OPTIONS, ...options };
+  
+  if (resolved.compact) {
+    resolved = { ...resolved, ...COMPACT_MODE_OVERRIDES };
+  }
+  
+  if (resolved.maxWidth === -1) {
+    resolved.maxWidth = isInteractiveTerminal() ? getTerminalWidth() : 0;
+  }
+  
+  return resolved;
+}
+
 export function render(
   input: string,
   options: Partial<RenderOptions> = {}
 ): string {
-  const fullOptions: RenderOptions = { ...DEFAULT_RENDER_OPTIONS, ...options };
+  const fullOptions = resolveOptions(options);
   const diagramType = detectDiagramType(input);
   
   switch (diagramType) {
@@ -60,7 +76,7 @@ export function renderToFlowchart(
   input: string,
   options: Partial<RenderOptions> = {}
 ): string {
-  const fullOptions: RenderOptions = { ...DEFAULT_RENDER_OPTIONS, ...options };
+  const fullOptions = resolveOptions(options);
   const ast = parseFlowchart(input);
   return renderFlowchart(ast, fullOptions);
 }
@@ -69,7 +85,7 @@ export function renderToSequence(
   input: string,
   options: Partial<RenderOptions> = {}
 ): string {
-  const fullOptions: RenderOptions = { ...DEFAULT_RENDER_OPTIONS, ...options };
+  const fullOptions = resolveOptions(options);
   const ast = parseSequence(input);
   return renderSequence(ast, fullOptions);
 }

@@ -52,25 +52,16 @@ export type NodeShape =
   | 'cylinder'    // [(text)] - Cylinder / database
   | 'subroutine'; // [[text]] - Subroutine
 
-/**
- * A node in the diagram graph
- */
 export interface Node {
-  /** Unique identifier */
   id: string;
-  /** Display label (may differ from id) */
   label: string;
-  /** Visual shape */
+  /** Truncated label for display (set during layout if maxLabelWidth is used) */
+  displayLabel?: string;
   shape: NodeShape;
-  /** Style class name (from classDef) */
   styleClass?: string;
-  /** Assigned grid position after layout */
   gridCoord?: GridCoord;
-  /** Assigned drawing position after coordinate transformation */
   drawingCoord?: DrawingCoord;
-  /** Width in characters (calculated from label + padding) */
   width?: number;
-  /** Height in characters */
   height?: number;
 }
 
@@ -146,8 +137,10 @@ export type Charset = 'unicode' | 'ascii';
 export interface RenderOptions {
   /** Character set - unicode for nice box drawing, ascii for compatibility */
   charset: Charset;
-  /** Maximum output width in characters (0 = unlimited) */
+  /** Maximum output width in characters (0 = unlimited, -1 = auto-detect terminal) */
   maxWidth: number;
+  /** Maximum label width before truncation (0 = unlimited) */
+  maxLabelWidth: number;
   /** Horizontal spacing between nodes (in grid units) */
   paddingX: number;
   /** Vertical spacing between nodes (in grid units) */
@@ -156,6 +149,8 @@ export interface RenderOptions {
   borderPadding: number;
   /** Show debug coordinates overlay */
   showCoords: boolean;
+  /** Compact mode - minimal spacing for space-constrained terminals */
+  compact: boolean;
 }
 
 /**
@@ -164,10 +159,21 @@ export interface RenderOptions {
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   charset: 'unicode',
   maxWidth: 0,
+  maxLabelWidth: 0,
   paddingX: 2,
   paddingY: 1,
   borderPadding: 1,
   showCoords: false,
+  compact: false,
+};
+
+/**
+ * Compact mode overrides for space-constrained rendering
+ */
+export const COMPACT_MODE_OVERRIDES: Partial<RenderOptions> = {
+  paddingX: 1,
+  paddingY: 0,
+  borderPadding: 0,
 };
 
 // ============================================================================

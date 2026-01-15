@@ -14,6 +14,7 @@ import {
 export class Canvas {
   private grid: string[][];
   private chars: CharacterSet;
+  private occupied: boolean[][];
   
   constructor(
     private width: number,
@@ -22,6 +23,9 @@ export class Canvas {
   ) {
     this.grid = Array.from({ length: height }, () => 
       Array.from({ length: width }, () => ' ')
+    );
+    this.occupied = Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => false)
     );
     this.chars = getCharacterSet(charset);
   }
@@ -36,6 +40,9 @@ export class Canvas {
 
   set(x: number, y: number, char: string): void {
     if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+      if (this.occupied[y][x]) {
+        return;
+      }
       const existing = this.grid[y][x];
       if (isLineOrJunctionChar(existing) && isLineOrJunctionChar(char)) {
         this.grid[y][x] = mergeJunctionChars(existing, char);
@@ -101,6 +108,38 @@ export class Canvas {
       this.set(x, y + i, vertical);
       this.set(x + width - 1, y + i, vertical);
     }
+    
+    this.markOccupied(x, y, width, height);
+  }
+
+  markOccupied(x: number, y: number, width: number, height: number): void {
+    for (let dy = 0; dy < height; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        const px = x + dx;
+        const py = y + dy;
+        if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
+          this.occupied[py][px] = true;
+        }
+      }
+    }
+  }
+
+  isOccupied(x: number, y: number): boolean {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+      return true;
+    }
+    return this.occupied[y][x];
+  }
+
+  isRegionClear(x: number, y: number, width: number, height: number): boolean {
+    for (let dy = 0; dy < height; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        if (this.isOccupied(x + dx, y + dy)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   drawArrow(x: number, y: number, direction: 'up' | 'down' | 'left' | 'right'): void {
@@ -109,9 +148,12 @@ export class Canvas {
 
   expandTo(newWidth: number, newHeight: number): void {
     if (newWidth > this.width) {
-      for (const row of this.grid) {
-        while (row.length < newWidth) {
-          row.push(' ');
+      for (let i = 0; i < this.grid.length; i++) {
+        while (this.grid[i].length < newWidth) {
+          this.grid[i].push(' ');
+        }
+        while (this.occupied[i].length < newWidth) {
+          this.occupied[i].push(false);
         }
       }
       this.width = newWidth;
@@ -120,6 +162,7 @@ export class Canvas {
     if (newHeight > this.height) {
       while (this.grid.length < newHeight) {
         this.grid.push(Array.from({ length: this.width }, () => ' '));
+        this.occupied.push(Array.from({ length: this.width }, () => false));
       }
       this.height = newHeight;
     }

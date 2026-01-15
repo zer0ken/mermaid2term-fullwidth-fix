@@ -1,5 +1,6 @@
 import type { GraphDirection, GridCoord, RenderOptions } from '../core/types.js';
 import type { FlowchartNode, FlowchartEdge, FlowchartAST } from '../diagrams/flowchart/types.js';
+import { truncateLabel } from '../core/text.js';
 
 export interface LayoutedGraph {
   nodes: Map<string, FlowchartNode>;
@@ -196,7 +197,13 @@ function calculateDimensions(
   for (const node of nodes.values()) {
     if (!node.gridCoord) continue;
     
-    const labelWidth = node.label.length + options.borderPadding * 2 + 2;
+    const displayLabel = options.maxLabelWidth > 0
+      ? truncateLabel(node.label, options.maxLabelWidth)
+      : node.label;
+    
+    node.displayLabel = displayLabel;
+    
+    const labelWidth = displayLabel.length + options.borderPadding * 2 + 2;
     const labelHeight = 1 + options.borderPadding * 2 + 2;
     
     node.width = labelWidth;
@@ -250,6 +257,39 @@ function gridToDrawingCoord(
   return { x, y };
 }
 
+function calculateTotalWidth(columnWidths: Map<number, number>, paddingX: number): number {
+  let total = 0;
+  for (const width of columnWidths.values()) {
+    total += width + paddingX;
+  }
+  return total;
+}
+
+function calculateTotalHeight(rowHeights: Map<number, number>, paddingY: number): number {
+  let total = 0;
+  for (const height of rowHeights.values()) {
+    total += height + paddingY;
+  }
+  return total;
+}
+
+function findMaxLabelWidthToFit(
+  nodes: Map<string, FlowchartNode>,
+  options: RenderOptions,
+  targetWidth: number
+): number {
+  const nodeCount = nodes.size;
+  if (nodeCount === 0) return 0;
+  
+  const numColumns = new Set([...nodes.values()].map(n => n.gridCoord?.x ?? 0)).size;
+  const overheadPerNode = options.borderPadding * 2 + 2;
+  const totalPadding = numColumns * options.paddingX;
+  const availableForLabels = targetWidth - totalPadding - (numColumns * overheadPerNode);
+  
+  const maxLabelWidth = Math.max(3, Math.floor(availableForLabels / numColumns));
+  return maxLabelWidth;
+}
+
 export function layoutFlowchart(
   ast: FlowchartAST,
   options: RenderOptions
@@ -273,7 +313,27 @@ export function layoutFlowchart(
   const layerNodes = orderNodesInLayers(nodes, edges, layers, backEdges);
   assignGridCoordinates(nodes, layerNodes, direction, options);
   
-  const { columnWidths, rowHeights } = calculateDimensions(nodes, options);
+  let effectiveOptions = options;
+  let { columnWidths, rowHeights } = calculateDimensions(nodes, effectiveOptions);
+  let totalWidth = calculateTotalWidth(columnWidths, effectiveOptions.paddingX);
+  
+  if (options.maxWidth > 0 && totalWidth > options.maxWidth) {
+    const calculatedMaxLabel = findMaxLabelWidthToFit(nodes, options, options.maxWidth);
+    
+    if (calculatedMaxLabel > 0) {
+      effectiveOptions = {
+        ...options,
+        maxLabelWidth: options.maxLabelWidth > 0
+          ? Math.min(options.maxLabelWidth, calculatedMaxLabel)
+          : calculatedMaxLabel,
+      };
+      
+      const recalculated = calculateDimensions(nodes, effectiveOptions);
+      columnWidths = recalculated.columnWidths;
+      rowHeights = recalculated.rowHeights;
+      totalWidth = calculateTotalWidth(columnWidths, effectiveOptions.paddingX);
+    }
+  }
   
   for (const node of nodes.values()) {
     if (node.gridCoord) {
@@ -281,8 +341,8 @@ export function layoutFlowchart(
         node.gridCoord,
         columnWidths,
         rowHeights,
-        options.paddingX,
-        options.paddingY
+        effectiveOptions.paddingX,
+        effectiveOptions.paddingY
       );
       
       const colWidth = columnWidths.get(node.gridCoord.x) ?? 0;
@@ -297,15 +357,7 @@ export function layoutFlowchart(
     }
   }
   
-  let totalWidth = 0;
-  for (const width of columnWidths.values()) {
-    totalWidth += width + options.paddingX;
-  }
-  
-  let totalHeight = 0;
-  for (const height of rowHeights.values()) {
-    totalHeight += height + options.paddingY;
-  }
+  const totalHeight = calculateTotalHeight(rowHeights, effectiveOptions.paddingY);
   
   return {
     nodes,

@@ -11,10 +11,12 @@ program
   .version('0.1.0')
   .argument('[file]', 'Mermaid file to render (use - for stdin)')
   .option('-a, --ascii', 'Use ASCII-only characters instead of Unicode', false)
-  .option('-w, --width <number>', 'Maximum output width (0 for unlimited)', '0')
+  .option('-w, --width <number>', 'Maximum output width (0=unlimited, -1=auto-detect terminal)', '0')
+  .option('-l, --max-label <number>', 'Maximum label width before truncation (0=unlimited)', '0')
   .option('-x, --padding-x <number>', 'Horizontal spacing between nodes', '5')
   .option('-y, --padding-y <number>', 'Vertical spacing between nodes', '5')
   .option('-p, --border-padding <number>', 'Padding inside node borders', '1')
+  .option('--compact', 'Compact mode - minimal spacing for narrow terminals', false)
   .option('-c, --coords', 'Show coordinate debug overlay', false)
   .action(async (file: string | undefined, opts) => {
     try {
@@ -38,9 +40,11 @@ program
       const output = render(input, {
         charset: opts.ascii ? 'ascii' : 'unicode' as Charset,
         maxWidth: parseInt(opts.width, 10),
+        maxLabelWidth: parseInt(opts.maxLabel, 10),
         paddingX: parseInt(opts.paddingX, 10),
         paddingY: parseInt(opts.paddingY, 10),
         borderPadding: parseInt(opts.borderPadding, 10),
+        compact: opts.compact,
         showCoords: opts.coords,
       });
       

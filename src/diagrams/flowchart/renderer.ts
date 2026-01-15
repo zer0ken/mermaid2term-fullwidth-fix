@@ -12,12 +12,13 @@ function drawNode(
   
   const { x, y } = node.drawingCoord;
   const { width, height } = node;
+  const label = node.displayLabel ?? node.label;
   
   canvas.drawBox(x, y, width, height);
   
-  const textX = x + Math.floor((width - node.label.length) / 2);
+  const textX = x + Math.floor((width - label.length) / 2);
   const textY = y + Math.floor(height / 2);
-  canvas.drawText(textX, textY, node.label);
+  canvas.drawText(textX, textY, label);
 }
 
 function getNodeCenter(node: FlowchartNode): { x: number; y: number } {
@@ -134,116 +135,187 @@ function drawBackEdge(
   }
 }
 
-function drawEdge(
-  canvas: Canvas,
+function canPlaceLabel(canvas: Canvas, x: number, y: number, label: string): boolean {
+  if (x < 0 || y < 0) return false;
+  for (let i = 0; i < label.length; i++) {
+    if (canvas.isOccupied(x + i, y)) return false;
+    const existing = canvas.get(x + i, y);
+    if (existing !== ' ') return false;
+  }
+  return true;
+}
+
+interface EdgeRenderInfo {
+  edge: FlowchartEdge;
+  fromNode: FlowchartNode;
+  toNode: FlowchartNode;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  dx: number;
+  dy: number;
+  isAligned: boolean;
+}
+
+const ALIGNMENT_THRESHOLD = 2;
+const BRANCH_SPACING = 2;
+
+function buildEdgeRenderInfo(
   edge: FlowchartEdge,
   fromNode: FlowchartNode,
   toNode: FlowchartNode,
-  graphDirection: 'LR' | 'RL' | 'TD' | 'BT',
-  options: RenderOptions,
-  isBackEdge: boolean = false,
-  sourceIndex: number = 0,
-  totalFromSource: number = 1,
-  targetIndex: number = 0,
-  totalToTarget: number = 1
-): void {
-  // Handle back-edges specially - route them around nodes
-  if (isBackEdge) {
-    drawBackEdge(canvas, edge, fromNode, toNode, graphDirection, options);
-    return;
-  }
-
-  const chars = getCharacterSet(options.charset);
+  graphDirection: 'LR' | 'RL' | 'TD' | 'BT'
+): EdgeRenderInfo {
   const { startDir, endDir } = determineEdgeDirection(fromNode, toNode, graphDirection);
-  
   const startBorder = getNodeBorderPoint(fromNode, startDir);
   const endBorder = getNodeBorderPoint(toNode, endDir);
   
-  const hChar = edge.style === 'dotted' ? chars.line.dottedHorizontal
-    : edge.style === 'thick' ? chars.line.thickHorizontal
-    : chars.line.horizontal;
-    
-  const vChar = edge.style === 'dotted' ? chars.line.dottedVertical
-    : edge.style === 'thick' ? chars.line.thickVertical
-    : chars.line.vertical;
-
-  let startX = startBorder.x;
-  let startY = startBorder.y;
-  let endX = endBorder.x;
-  let endY = endBorder.y;
+  const startX = startBorder.x + (startDir === 'right' ? 1 : startDir === 'left' ? -1 : 0);
+  const startY = startBorder.y + (startDir === 'down' ? 1 : startDir === 'up' ? -1 : 0);
+  const endX = endBorder.x;
+  const endY = endBorder.y;
   
-  if (startDir === 'right') startX += 1;
-  else if (startDir === 'left') startX -= 1;
-  else if (startDir === 'down') startY += 1;
-  else if (startDir === 'up') startY -= 1;
-
-  const dx = Math.abs(endX - startX);
-  const dy = Math.abs(endY - startY);
-  const isVerticalPrimary = startDir === 'down' || startDir === 'up';
-  const isHorizontalPrimary = startDir === 'left' || startDir === 'right';
+  const dx = endX - startX;
+  const dy = endY - startY;
   
-  const alignmentTolerance = 3;
-  const effectivelyAlignedX = dx <= alignmentTolerance && isVerticalPrimary;
-  const effectivelyAlignedY = dy <= alignmentTolerance && isHorizontalPrimary;
+  const isVerticalFlow = graphDirection === 'TD' || graphDirection === 'BT';
+  const isAligned = isVerticalFlow 
+    ? Math.abs(dx) <= ALIGNMENT_THRESHOLD 
+    : Math.abs(dy) <= ALIGNMENT_THRESHOLD;
+  
+  return { edge, fromNode, toNode, startX, startY, endX, endY, dx, dy, isAligned };
+}
 
-  if (startY === endY || effectivelyAlignedY) {
-    canvas.drawHorizontalLine(Math.min(startX, endX), Math.max(startX, endX), startY, hChar);
-  } else if (startX === endX || effectivelyAlignedX) {
-    canvas.drawVerticalLine(endX, Math.min(startY, endY), Math.max(startY, endY), vChar);
-  } else {
-    const isVerticalFirst = startDir === 'down' || startDir === 'up';
+function drawAllEdges(
+  canvas: Canvas,
+  allEdgeInfos: EdgeRenderInfo[],
+  graphDirection: 'LR' | 'RL' | 'TD' | 'BT',
+  options: RenderOptions
+): void {
+  if (allEdgeInfos.length === 0) return;
+  
+  const chars = getCharacterSet(options.charset);
+  const isVerticalFlow = graphDirection === 'TD' || graphDirection === 'BT';
+  const hChar = chars.line.horizontal;
+  const vChar = chars.line.vertical;
+  
+  const edgesBySource = new Map<string, EdgeRenderInfo[]>();
+  const edgesByTarget = new Map<string, EdgeRenderInfo[]>();
+  
+  for (const info of allEdgeInfos) {
+    const sourceKey = info.edge.from;
+    const targetKey = info.edge.to;
     
-    if (isVerticalFirst) {
-      const sourceOffset = totalFromSource > 1 ? (sourceIndex - Math.floor(totalFromSource / 2)) * 2 : 0;
-      const baseTurnY = endY + (endDir === 'up' ? -2 : 2);
-      const turnY = totalToTarget > 1 ? baseTurnY : baseTurnY + sourceOffset;
-      
-      canvas.drawVerticalLine(startX, Math.min(startY, turnY), Math.max(startY, turnY), vChar);
-      canvas.drawHorizontalLine(Math.min(startX, endX), Math.max(startX, endX), turnY, hChar);
-      
-      if (targetIndex === 0) {
-        canvas.drawVerticalLine(endX, Math.min(turnY, endY), Math.max(turnY, endY), vChar);
-      }
-    } else {
-      const sourceOffset = totalFromSource > 1 ? (sourceIndex - Math.floor(totalFromSource / 2)) * 2 : 0;
-      const baseTurnX = endX + (endDir === 'left' ? -2 : 2);
-      const turnX = totalToTarget > 1 ? baseTurnX : baseTurnX + sourceOffset;
-      
-      canvas.drawHorizontalLine(Math.min(startX, turnX), Math.max(startX, turnX), startY, hChar);
-      canvas.drawVerticalLine(turnX, Math.min(startY, endY), Math.max(startY, endY), vChar);
-      
-      if (targetIndex === 0) {
-        canvas.drawHorizontalLine(Math.min(turnX, endX), Math.max(turnX, endX), endY, hChar);
-      }
-    }
+    const sourceList = edgesBySource.get(sourceKey) ?? [];
+    sourceList.push(info);
+    edgesBySource.set(sourceKey, sourceList);
+    
+    const targetList = edgesByTarget.get(targetKey) ?? [];
+    targetList.push(info);
+    edgesByTarget.set(targetKey, targetList);
   }
   
-
+  const drawnVerticals = new Map<string, number>();
   
-  if (edge.label) {
-    const isHorizontalEdge = startY === endY || effectivelyAlignedY;
-    const isVerticalEdge = startX === endX || effectivelyAlignedX;
+  for (const [_sourceKey, edgeInfos] of edgesBySource) {
+    const { startX, startY } = edgeInfos[0];
     
-    if (isHorizontalEdge) {
-      const availableSpace = Math.abs(endX - startX) - 2;
-      if (availableSpace >= edge.label.length) {
-        const midX = Math.floor((startX + endX) / 2);
-        const labelX = midX - Math.floor(edge.label.length / 2);
-        canvas.drawText(labelX, startY - 1, edge.label);
-      }
-    } else if (isVerticalEdge) {
-      const midY = Math.floor((startY + endY) / 2);
-      canvas.drawText(endX + 2, midY, edge.label);
-    } else {
-      const isVerticalFirst = startDir === 'down' || startDir === 'up';
-      if (isVerticalFirst) {
-        const labelX = endX + 1;
-        const labelY = endY - 2;
-        canvas.drawText(labelX, labelY, edge.label);
+    if (isVerticalFlow) {
+      const firstBranchY = startY + 1;
+      const numEdges = edgeInfos.length;
+      
+      if (numEdges === 1 && edgeInfos[0].startX === edgeInfos[0].endX) {
+        const info = edgeInfos[0];
+        canvas.drawVerticalLine(info.endX, startY, info.endY, vChar);
+        
+        if (info.edge.label) {
+          const labelX = info.endX + 2;
+          const labelY = Math.floor((startY + info.endY) / 2);
+          if (canPlaceLabel(canvas, labelX, labelY, info.edge.label)) {
+            canvas.drawText(labelX, labelY, info.edge.label);
+          }
+        }
       } else {
-        const labelY = Math.min(startY, endY) + Math.floor(Math.abs(endY - startY) / 2);
-        const labelX = endX + 2;
-        canvas.drawText(labelX, labelY, edge.label);
+        const lastBranchY = firstBranchY + (numEdges - 1) * BRANCH_SPACING;
+        canvas.drawVerticalLine(startX, startY, lastBranchY, vChar);
+        
+        for (let i = 0; i < numEdges; i++) {
+          const info = edgeInfos[i];
+          const branchY = firstBranchY + i * BRANCH_SPACING;
+          const goingRight = info.dx > 0;
+          canvas.drawHorizontalLine(Math.min(startX, info.endX), Math.max(startX, info.endX), branchY, hChar);
+          
+          const vertKey = `${info.endX}:${info.endY}`;
+          const existingBranchY = drawnVerticals.get(vertKey);
+          
+          if (existingBranchY !== undefined) {
+            if (branchY < existingBranchY) {
+              canvas.drawVerticalLine(info.endX, branchY, existingBranchY, vChar);
+              drawnVerticals.set(vertKey, branchY);
+            }
+          } else {
+            canvas.drawVerticalLine(info.endX, branchY, info.endY, vChar);
+            drawnVerticals.set(vertKey, branchY);
+          }
+          
+          if (info.edge.label) {
+            const preferredX = goingRight ? info.endX + 1 : Math.max(0, info.endX - info.edge.label.length - 1);
+            const altX = goingRight 
+              ? Math.max(0, startX - info.edge.label.length - 1)
+              : info.endX + 1;
+            
+            const labelPositions = [
+              { x: preferredX, y: branchY },
+              { x: altX, y: branchY },
+              { x: preferredX, y: branchY + 1 },
+              { x: altX, y: branchY + 1 },
+            ];
+            
+            for (const pos of labelPositions) {
+              if (canPlaceLabel(canvas, pos.x, pos.y, info.edge.label)) {
+                canvas.drawText(pos.x, pos.y, info.edge.label);
+                break;
+              }
+            }
+          }
+        }
+      }
+    } else {
+      const firstBranchX = startX + 2;
+      const numEdges = edgeInfos.length;
+      
+      if (numEdges === 1 && edgeInfos[0].startY === edgeInfos[0].endY) {
+        const info = edgeInfos[0];
+        canvas.drawHorizontalLine(startX, info.endX, info.endY, hChar);
+        
+        if (info.edge.label) {
+          const labelX = Math.floor((startX + info.endX) / 2) - Math.floor(info.edge.label.length / 2);
+          const labelY = startY - 1;
+          if (canPlaceLabel(canvas, labelX, labelY, info.edge.label)) {
+            canvas.drawText(labelX, labelY, info.edge.label);
+          }
+        }
+      } else {
+        const lastBranchX = firstBranchX + (numEdges - 1) * BRANCH_SPACING;
+        canvas.drawHorizontalLine(startX, lastBranchX, startY, hChar);
+        
+        for (let i = 0; i < numEdges; i++) {
+          const info = edgeInfos[i];
+          const branchX = firstBranchX + i * BRANCH_SPACING;
+          const goingDown = info.dy > 0;
+          
+          canvas.drawVerticalLine(branchX, Math.min(startY, info.endY), Math.max(startY, info.endY), vChar);
+          canvas.drawHorizontalLine(branchX, info.endX, info.endY, hChar);
+          
+          if (info.edge.label) {
+            const labelX = branchX + 1;
+            const labelY = goingDown ? startY + 1 : info.endY + 1;
+            if (canPlaceLabel(canvas, labelX, labelY, info.edge.label)) {
+              canvas.drawText(labelX, labelY, info.edge.label);
+            }
+          }
+        }
       }
     }
   }
@@ -261,46 +333,31 @@ export function renderFlowchart(
   
   const canvas = new Canvas(layout.width + 10, layout.height + 10, options.charset);
   
-  const edgesBySource = new Map<string, FlowchartEdge[]>();
-  const edgesByTarget = new Map<string, FlowchartEdge[]>();
-  for (const edge of layout.edges) {
-    const fromList = edgesBySource.get(edge.from) ?? [];
-    fromList.push(edge);
-    edgesBySource.set(edge.from, fromList);
-    
-    const toList = edgesByTarget.get(edge.to) ?? [];
-    toList.push(edge);
-    edgesByTarget.set(edge.to, toList);
-  }
-  
-  for (const edge of layout.edges) {
-    const fromNode = layout.nodes.get(edge.from);
-    const toNode = layout.nodes.get(edge.to);
-    
-    if (fromNode && toNode) {
-      const isBackEdge = layout.backEdges.has(edge);
-      const edgesFromSameSource = edgesBySource.get(edge.from) ?? [];
-      const edgesToSameTarget = edgesByTarget.get(edge.to) ?? [];
-      const sourceIndex = edgesFromSameSource.indexOf(edge);
-      const targetIndex = edgesToSameTarget.indexOf(edge);
-      drawEdge(
-        canvas, edge, fromNode, toNode, ast.direction, options,
-        isBackEdge,
-        sourceIndex, edgesFromSameSource.length,
-        targetIndex, edgesToSameTarget.length
-      );
-    }
-  }
-  
   for (const node of layout.nodes.values()) {
     drawNode(canvas, node);
   }
   
+  const forwardEdges: EdgeRenderInfo[] = [];
+  for (const edge of layout.edges) {
+    const fromNode = layout.nodes.get(edge.from);
+    const toNode = layout.nodes.get(edge.to);
+    if (!fromNode || !toNode) continue;
+    
+    if (layout.backEdges.has(edge)) {
+      drawBackEdge(canvas, edge, fromNode, toNode, ast.direction, options);
+    } else {
+      const info = buildEdgeRenderInfo(edge, fromNode, toNode, ast.direction);
+      forwardEdges.push(info);
+    }
+  }
+  
+  drawAllEdges(canvas, forwardEdges, ast.direction, options);
+  
+  const chars = getCharacterSet(options.charset);
   for (const edge of layout.edges) {
     const toNode = layout.nodes.get(edge.to);
     if (toNode && edge.arrowType !== 'open') {
       const isBackEdge = layout.backEdges.has(edge);
-      const chars = getCharacterSet(options.charset);
       
       let endDir: Direction;
       if (isBackEdge) {
