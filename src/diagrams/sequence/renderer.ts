@@ -1,5 +1,6 @@
 import { Canvas } from '../../core/canvas.js';
 import { getCharacterSet } from '../../core/characters.js';
+import { displayWidth } from '../../core/text.js';
 import type { RenderOptions } from '../../core/types.js';
 import type { SequenceAST, Participant, Message } from './types.js';
 
@@ -31,7 +32,7 @@ function layoutSequence(ast: SequenceAST, _options: RenderOptions): SequenceLayo
   let currentX = PARTICIPANT_PADDING;
 
   for (const participant of participantList) {
-    const labelWidth = participant.alias.length;
+    const labelWidth = displayWidth(participant.alias);
     const boxWidth = Math.max(labelWidth + 4, 7);
 
     const layout: ParticipantLayout = {
@@ -67,7 +68,7 @@ function drawParticipantBox(
 ): void {
   canvas.drawBox(layout.x, y, layout.width, PARTICIPANT_BOX_HEIGHT);
 
-  const textX = layout.x + Math.floor((layout.width - layout.participant.alias.length) / 2);
+  const textX = layout.x + Math.floor((layout.width - displayWidth(layout.participant.alias)) / 2);
   const textY = y + 1;
   canvas.drawText(textX, textY, layout.participant.alias);
 }
@@ -130,7 +131,7 @@ function drawMessage(
   canvas.forceSet(isLeftToRight ? toX : toX, y, arrowChar);
 
   if (message.text) {
-    const textLen = message.text.length;
+    const textLen = displayWidth(message.text);
     const midX = Math.floor((fromX + toX) / 2);
     const textX = midX - Math.floor(textLen / 2);
     canvas.drawText(textX, y - 1, message.text);

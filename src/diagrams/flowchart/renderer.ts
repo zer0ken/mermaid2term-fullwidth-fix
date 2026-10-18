@@ -1,5 +1,6 @@
 import { Canvas } from '../../core/canvas.js';
 import { getCharacterSet } from '../../core/characters.js';
+import { displayWidth } from '../../core/text.js';
 import type { RenderOptions, Direction } from '../../core/types.js';
 import type { FlowchartAST, FlowchartNode, FlowchartEdge } from './types.js';
 import { layoutFlowchart } from '../../layout/sugiyama.js';
@@ -16,7 +17,7 @@ function drawNode(
   
   canvas.drawBox(x, y, width, height);
   
-  const textX = x + Math.floor((width - label.length) / 2);
+  const textX = x + Math.floor((width - displayWidth(label)) / 2);
   const textY = y + Math.floor(height / 2);
   canvas.drawText(textX, textY, label);
 }
@@ -137,10 +138,15 @@ function drawBackEdge(
 
 function canPlaceLabel(canvas: Canvas, x: number, y: number, label: string): boolean {
   if (x < 0 || y < 0) return false;
-  for (let i = 0; i < label.length; i++) {
-    if (canvas.isOccupied(x + i, y)) return false;
-    const existing = canvas.get(x + i, y);
-    if (existing !== ' ') return false;
+  let col = 0;
+  for (const char of label) {
+    const w = displayWidth(char);
+    for (let k = 0; k < w; k++) {
+      if (canvas.isOccupied(x + col + k, y)) return false;
+      const existing = canvas.get(x + col + k, y);
+      if (existing !== ' ') return false;
+    }
+    col += w;
   }
   return true;
 }
@@ -260,9 +266,9 @@ function drawAllEdges(
           }
           
           if (info.edge.label) {
-            const preferredX = goingRight ? info.endX + 1 : Math.max(0, info.endX - info.edge.label.length - 1);
+            const preferredX = goingRight ? info.endX + 1 : Math.max(0, info.endX - displayWidth(info.edge.label) - 1);
             const altX = goingRight 
-              ? Math.max(0, startX - info.edge.label.length - 1)
+              ? Math.max(0, startX - displayWidth(info.edge.label) - 1)
               : info.endX + 1;
             
             const labelPositions = [
@@ -290,7 +296,7 @@ function drawAllEdges(
         canvas.drawHorizontalLine(startX, info.endX, info.endY, hChar);
         
         if (info.edge.label) {
-          const labelX = Math.floor((startX + info.endX) / 2) - Math.floor(info.edge.label.length / 2);
+          const labelX = Math.floor((startX + info.endX) / 2) - Math.floor(displayWidth(info.edge.label) / 2);
           const labelY = startY - 1;
           if (canPlaceLabel(canvas, labelX, labelY, info.edge.label)) {
             canvas.drawText(labelX, labelY, info.edge.label);

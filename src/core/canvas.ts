@@ -10,6 +10,7 @@ import {
   getJunctionChar,
   type CharacterSet 
 } from './characters.js';
+import { isFullWidth } from './text.js';
 
 export class Canvas {
   private grid: string[][];
@@ -66,10 +67,18 @@ export class Canvas {
   }
 
   drawText(x: number, y: number, text: string): void {
-    for (let i = 0; i < text.length; i++) {
-      if (x + i < this.width) {
-        this.grid[y][x + i] = text[i];
+    let col = 0;
+    for (const char of text) {
+      const px = x + col;
+      if (px >= 0 && px < this.width) {
+        this.grid[y][px] = char;
       }
+      if (isFullWidth(char) && px + 1 >= 0 && px + 1 < this.width) {
+        // A full-width glyph spans two terminal columns; leave the second cell empty
+        // so it does not render as a gap between glyphs.
+        this.grid[y][px + 1] = '';
+      }
+      col += isFullWidth(char) ? 2 : 1;
     }
   }
 
@@ -189,6 +198,10 @@ export class Canvas {
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const char = this.grid[y][x];
+        // Empty continuation cells of full-width glyphs are not characters to process.
+        if (char === '') {
+          continue;
+        }
         if (!junctionChars.includes(char)) continue;
         
         const above = y > 0 ? this.grid[y - 1][x] : ' ';

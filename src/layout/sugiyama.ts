@@ -1,6 +1,6 @@
 import type { GraphDirection, GridCoord, RenderOptions } from '../core/types.js';
 import type { FlowchartNode, FlowchartEdge, FlowchartAST } from '../diagrams/flowchart/types.js';
-import { truncateLabel } from '../core/text.js';
+import { truncateLabel, displayWidth } from '../core/text.js';
 
 export interface LayoutedGraph {
   nodes: Map<string, FlowchartNode>;
@@ -203,7 +203,7 @@ function calculateDimensions(
     
     node.displayLabel = displayLabel;
     
-    const labelWidth = displayLabel.length + options.borderPadding * 2 + 2;
+    const labelWidth = displayWidth(displayLabel) + options.borderPadding * 2 + 2;
     const labelHeight = 1 + options.borderPadding * 2 + 2;
     
     node.width = labelWidth;
